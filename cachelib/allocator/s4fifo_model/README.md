@@ -38,13 +38,5 @@ The model is included via `S4FIFOLightGBMPredictor.h`:
 container.setPredictionCallback(facebook::cachelib::lightGBMPredict);
 ```
 
-## Regenerating Models
 
-To regenerate with different parameters:
-
-```bash
-cd /users/Haocheng/ana
-python3 train_xgb_18class_lite.py  # Train models
-python3 export_models_lite.py      # Export to C
-cp xgb_18class_results_lite/code/c/*.c CacheLib/cachelib/allocator/s4fifo_model/
-```
+Note: we use lite model since the full model -> over 1GB after conversion
