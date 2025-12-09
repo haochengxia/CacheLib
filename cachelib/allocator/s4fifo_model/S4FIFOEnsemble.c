@@ -1,10 +1,10 @@
 // Ensemble aggregation wrapper for CacheLib S4FIFO
-// Include all model files
-#include "cachelib/allocator/s4fifo_model/model_0.c"
-#include "cachelib/allocator/s4fifo_model/model_1.c"
-#include "cachelib/allocator/s4fifo_model/model_2.c"
-#include "cachelib/allocator/s4fifo_model/model_3.c"
-#include "cachelib/allocator/s4fifo_model/model_4.c"
+// Include all model files (relative paths within s4fifo_model/)
+#include "model_0.c"
+#include "model_1.c"
+#include "model_2.c"
+#include "model_3.c"
+#include "model_4.c"
 
 void ensemble_score(double *input, double *result) {
     // Temporary arrays for each model's output

@@ -1,3 +1,4 @@
+#include <math.h>
 #include <string.h>
 void softmax_1(double *x, int size, double *result) {
     double max = x[0];

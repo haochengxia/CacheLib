@@ -6,16 +6,19 @@
  * 
  * This is generated from train_xgb_18class_lite.py and exported via m2cgen.
  * Model accuracy: ~47% top-1, Mean improvement over FIFO: 15.34%
+ * 
+ * NOTE: This header should be included AFTER S4FIFOFeatureVector and
+ * S4FIFOPredictedParams are defined (e.g., by MMS4FIFO.h).
  */
 
 #pragma once
 
 #include <cmath>
-#include "cachelib/allocator/MMS4FIFO.h"
+#include <cstddef>  // for size_t
 
 // Include the ensemble model (C code, compiled as extern "C")
 extern "C" {
-#include "cachelib/allocator/s4fifo_model/S4FIFOEnsemble.c"
+#include "s4fifo_model/S4FIFOEnsemble.c"
 }
 
 namespace facebook::cachelib {
