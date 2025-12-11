@@ -39,6 +39,28 @@ struct S4FIFOConfigEntry {
     double k;  // smallSkipRatio
 };
 
+
+// // Raw input features (from cache statistics)
+// typedef struct {
+//     // Histogram bins (20 bins each for ghost, main, small)
+//     double hist_ghost[20];
+//     double hist_main[20];
+//     double hist_small[20];
+    
+//     // Entropy
+//     double H_g, H_m, H_s;
+    
+//     // Hit counts
+//     double hits_ghost, hits_main, hits_small, total_hits;
+    
+//     // Request stats
+//     double rho_onehit, rho_unique, total_reqs;
+    
+//     // Cache size (log scale) - from actual cache size
+//     double log_C;  // log(cache_size)
+// } RawFeatures;
+
+
 constexpr S4FIFOConfigEntry kS4FIFOConfigs[18] = {
     {0.20, 1, 0, 3.0, 0.25},  // Class 0
     {0.05, 1, 0, 0.9, 0.25},  // Class 1
@@ -60,106 +82,103 @@ constexpr S4FIFOConfigEntry kS4FIFOConfigs[18] = {
     {0.05, 2, 0, 0.9, 0.25},  // Class 17
 };
 
+
+
+// Feature order (alphabetical, matching Python training):
+// 0: H_g, 1: H_m, 2: H_s, 3: decay_rate_small, 4: entropy_gap, 5: ghost_pressure,
+// 6-25: hist_ghost_0..19, 26-45: hist_main_0..19, 46-65: hist_small_0..19,
+// 66: log_C, 67: probation_efficiency, 68: ratio_estimate, 69: rho_onehit,
+// 70: rho_unique, 71: scan_intensity, 72: tail_heaviness, 73: thrashing_risk, 74: total_reqs
+
 // Prepare model input features from S4FIFOFeatureVector
-// Maps the CacheLib feature vector to the 73-feature input expected by the model
+// Maps the CacheLib feature vector to the 75-feature input expected by the model
 // Features are in SORTED order (alphabetical) as per feature_columns.json
 inline void prepareModelInput(const S4FIFOFeatureVector& fv, double* input) {
     // Initialize all to 0
-    for (int i = 0; i < 73; i++) input[i] = 0.0;
+    for (int i = 0; i < 75; i++) input[i] = 0.0;
     
-    // Compute derived features
+    // Get log_C from feature vector (log10 of cache capacity in objects)
+    // fv.logCacheCapacity is already log10, matching Python training
+    double log_C = fv.logCacheCapacity;
+    
+    // === Derived features ===
+    
+    // probation_efficiency: hits_small / (hits_main + 1e-6)
     double probation_efficiency = static_cast<double>(fv.hitsSmall) / (fv.hitsMain + 1e-6);
+    
+    // ghost_pressure: hits_ghost / (total_hits + hits_ghost + 1e-6)
     double total_hits_with_ghost = static_cast<double>(fv.totalHits + fv.hitsGhost);
     double ghost_pressure = static_cast<double>(fv.hitsGhost) / (total_hits_with_ghost + 1e-6);
-    double entropy_gap = fv.hitRatioMain - fv.hitRatioSmall;  // H_m - H_s
+    
+    // entropy_gap: H_m - H_s
+    double entropy_gap = fv.hitRatioMain - fv.hitRatioSmall;
+    
+    // decay_rate_small: hist_small[0] - hist_small[1]
     double decay_rate_small = fv.histSmall[0] - fv.histSmall[1];
     
-    // tail_heaviness: sum of hist_main[10..19]
+    // tail_heaviness: sum(hist_main[10..19])
     double tail_heaviness = 0.0;
     for (int i = 10; i < 20; i++) tail_heaviness += fv.histMain[i];
     
-    // Ratio placeholder - in real usage, this should be passed in
-    double ratio = 0.01;
-    double thrashing_risk = fv.uniqueRatio / (ratio * 100.0 + 1e-6);
-    double scan_intensity = fv.oneHitRatio * (1.0 - ratio);
+    // === WSS-Estimated Ratio ===
+    // ratio_estimate = cache_size / working_set_size
+    // cache_size = exp(log_C)
+    // working_set_size = total_reqs * rho_unique
+    double cache_size = std::exp(log_C);
+    double working_set_size = static_cast<double>(fv.totalRequests) * fv.uniqueRatio;
+    double ratio_estimate = cache_size / (working_set_size + 1e-6);
     
-    // Map features to model input indices (SORTED alphabetical order)
-    input[0] = fv.hitRatioGhost;  // H_g
-    input[1] = fv.hitRatioMain;  // H_m
-    input[2] = fv.hitRatioSmall;  // H_s
-    input[3] = decay_rate_small;
-    input[4] = entropy_gap;
-    input[5] = ghost_pressure;
-    input[6] = fv.histGhost[0];
-    input[7] = fv.histGhost[1];
-    input[8] = fv.histGhost[10];
-    input[9] = fv.histGhost[11];
-    input[10] = fv.histGhost[12];
-    input[11] = fv.histGhost[13];
-    input[12] = fv.histGhost[14];
-    input[13] = fv.histGhost[15];
-    input[14] = fv.histGhost[16];
-    input[15] = fv.histGhost[17];
-    input[16] = fv.histGhost[18];
-    input[17] = fv.histGhost[19];
-    input[18] = fv.histGhost[2];
-    input[19] = fv.histGhost[3];
-    input[20] = fv.histGhost[4];
-    input[21] = fv.histGhost[5];
-    input[22] = fv.histGhost[6];
-    input[23] = fv.histGhost[7];
-    input[24] = fv.histGhost[8];
-    input[25] = fv.histGhost[9];
-    input[26] = fv.histMain[0];
-    input[27] = fv.histMain[1];
-    input[28] = fv.histMain[10];
-    input[29] = fv.histMain[11];
-    input[30] = fv.histMain[12];
-    input[31] = fv.histMain[13];
-    input[32] = fv.histMain[14];
-    input[33] = fv.histMain[15];
-    input[34] = fv.histMain[16];
-    input[35] = fv.histMain[17];
-    input[36] = fv.histMain[18];
-    input[37] = fv.histMain[19];
-    input[38] = fv.histMain[2];
-    input[39] = fv.histMain[3];
-    input[40] = fv.histMain[4];
-    input[41] = fv.histMain[5];
-    input[42] = fv.histMain[6];
-    input[43] = fv.histMain[7];
-    input[44] = fv.histMain[8];
-    input[45] = fv.histMain[9];
-    input[46] = fv.histSmall[0];
-    input[47] = fv.histSmall[1];
-    input[48] = fv.histSmall[10];
-    input[49] = fv.histSmall[11];
-    input[50] = fv.histSmall[12];
-    input[51] = fv.histSmall[13];
-    input[52] = fv.histSmall[14];
-    input[53] = fv.histSmall[15];
-    input[54] = fv.histSmall[16];
-    input[55] = fv.histSmall[17];
-    input[56] = fv.histSmall[18];
-    input[57] = fv.histSmall[19];
-    input[58] = fv.histSmall[2];
-    input[59] = fv.histSmall[3];
-    input[60] = fv.histSmall[4];
-    input[61] = fv.histSmall[5];
-    input[62] = fv.histSmall[6];
-    input[63] = fv.histSmall[7];
-    input[64] = fv.histSmall[8];
-    input[65] = fv.histSmall[9];
-    input[66] = probation_efficiency;
-    input[67] = fv.oneHitRatio;
-    input[68] = fv.uniqueRatio;
-    input[69] = scan_intensity;
-    input[70] = tail_heaviness;
-    input[71] = thrashing_risk;
-    input[72] = static_cast<double>(fv.totalRequests);
+    // Clip to reasonable range [0.0001, 1.0]
+    if (ratio_estimate < 0.0001) ratio_estimate = 0.0001;
+    if (ratio_estimate > 1.0) ratio_estimate = 1.0;
+    
+    // thrashing_risk = rho_unique / (ratio_estimate * 100 + 1e-6)
+    double thrashing_risk = fv.uniqueRatio / (ratio_estimate * 100.0 + 1e-6);
+    
+    // scan_intensity = rho_onehit * (1 - ratio_estimate)
+    double scan_intensity = fv.oneHitRatio * (1.0 - ratio_estimate);
+    
+    // === Fill input array (alphabetical order) ===
+    input[0] = fv.hitRatioGhost;            // H_g
+    input[1] = fv.hitRatioMain;             // H_m
+    input[2] = fv.hitRatioSmall;            // H_s
+    input[3] = decay_rate_small;            // decay_rate_small
+    input[4] = entropy_gap;                 // entropy_gap
+    input[5] = ghost_pressure;              // ghost_pressure
+    
+    // IMPORTANT: Python sorts feature names alphabetically, so histogram indices are:
+    // 0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 2, 3, 4, 5, 6, 7, 8, 9
+    // This is lexicographic (string) order, not numeric order!
+    static const int HIST_ORDER[20] = {0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 2, 3, 4, 5, 6, 7, 8, 9};
+    
+    // hist_ghost_0, 1, 10, 11, ... 19, 2, 3, ... 9 (indices 6-25)
+    for (int i = 0; i < 20; i++) {
+        input[6 + i] = fv.histGhost[HIST_ORDER[i]];
+    }
+    
+    // hist_main_0, 1, 10, 11, ... 19, 2, 3, ... 9 (indices 26-45)
+    for (int i = 0; i < 20; i++) {
+        input[26 + i] = fv.histMain[HIST_ORDER[i]];
+    }
+    
+    // hist_small_0, 1, 10, 11, ... 19, 2, 3, ... 9 (indices 46-65)
+    for (int i = 0; i < 20; i++) {
+        input[46 + i] = fv.histSmall[HIST_ORDER[i]];
+    }
+    
+    input[66] = log_C;                      // log_C
+    input[67] = probation_efficiency;       // probation_efficiency
+    input[68] = ratio_estimate;             // ratio_estimate
+    input[69] = fv.oneHitRatio;             // rho_onehit
+    input[70] = fv.uniqueRatio;             // rho_unique
+    input[71] = scan_intensity;             // scan_intensity
+    input[72] = tail_heaviness;             // tail_heaviness
+    input[73] = thrashing_risk;             // thrashing_risk
+    input[74] = static_cast<double>(fv.totalRequests);  // total_reqs
 }
 
 // LightGBM prediction function to be used as S4FIFOPredictionCallback
+// Uses features.logCacheCapacity for log_C (automatically populated from cache size)
 inline S4FIFOPredictedParams lightGBMPredict(const S4FIFOFeatureVector& features) {
     S4FIFOPredictedParams params;
     
@@ -169,8 +188,8 @@ inline S4FIFOPredictedParams lightGBMPredict(const S4FIFOFeatureVector& features
         return params;
     }
     
-    // Prepare input features
-    double input[73];
+    // Prepare input features (75 features including log_C and ratio_estimate)
+    double input[75];
     prepareModelInput(features, input);
     
     // Run ensemble prediction
